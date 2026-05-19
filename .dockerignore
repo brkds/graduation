@@ -1,0 +1,80 @@
+# Git相关
+.git
+.gitignore
+
+# Docker相关
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 环境变量和配置
+.env
+.env.*
+env.example
+
+# 文档和说明
+README*.md
+*.md
+doc/
+*.png
+*.jpg
+*.jpeg
+
+# 日志和数据文件  
+logs/
+*.log
+*.db
+*.db-*
+
+# Python缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.coverage
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# 项目特定的排除项
+# 项目数据目录(这些在容器运行时通过挂载提供)
+projects/
+data/
+testdata/
+
+# 交叉验证和测试数据
+cross_validation/
+ctags_validation/
+
+# 对象文件和编译产物
+obj/
+*.o
+*.a
+
+# 备份文件
+*.bak
+*.backup
+
+# Node.js相关（如果有前端构建）
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

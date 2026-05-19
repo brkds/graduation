@@ -1,0 +1,87 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-std=c99",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "obj/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/zwy/project2721707-302151/testdata/comprehensive_test",
+    "file": "/home/zwy/project2721707-302151/testdata/comprehensive_test/src/main.c",
+    "output": "/home/zwy/project2721707-302151/testdata/comprehensive_test/obj/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-std=c99",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "obj/memory.o",
+      "src/memory.c"
+    ],
+    "directory": "/home/zwy/project2721707-302151/testdata/comprehensive_test",
+    "file": "/home/zwy/project2721707-302151/testdata/comprehensive_test/src/memory.c",
+    "output": "/home/zwy/project2721707-302151/testdata/comprehensive_test/obj/memory.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-std=c99",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "obj/processing.o",
+      "src/processing.c"
+    ],
+    "directory": "/home/zwy/project2721707-302151/testdata/comprehensive_test",
+    "file": "/home/zwy/project2721707-302151/testdata/comprehensive_test/src/processing.c",
+    "output": "/home/zwy/project2721707-302151/testdata/comprehensive_test/obj/processing.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-std=c99",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "obj/device/device_manager.o",
+      "src/device/device_manager.c"
+    ],
+    "directory": "/home/zwy/project2721707-302151/testdata/comprehensive_test",
+    "file": "/home/zwy/project2721707-302151/testdata/comprehensive_test/src/device/device_manager.c",
+    "output": "/home/zwy/project2721707-302151/testdata/comprehensive_test/obj/device/device_manager.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-std=c99",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "obj/utils/utils.o",
+      "src/utils/utils.c"
+    ],
+    "directory": "/home/zwy/project2721707-302151/testdata/comprehensive_test",
+    "file": "/home/zwy/project2721707-302151/testdata/comprehensive_test/src/utils/utils.c",
+    "output": "/home/zwy/project2721707-302151/testdata/comprehensive_test/obj/utils/utils.o"
+  }
+]

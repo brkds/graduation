@@ -1,0 +1,47 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/clang-14",
+      "-Iinclude",
+      "-Wall",
+      "-g",
+      "-c",
+      "-o",
+      "obj/main.o",
+      "main.c"
+    ],
+    "directory": "/home/lzq/project2721707-302151/testdata/directory",
+    "file": "/home/lzq/project2721707-302151/testdata/directory/main.c",
+    "output": "/home/lzq/project2721707-302151/testdata/directory/obj/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/clang-14",
+      "-Iinclude",
+      "-Wall",
+      "-g",
+      "-c",
+      "-o",
+      "obj/drivers/device.o",
+      "drivers/device.c"
+    ],
+    "directory": "/home/lzq/project2721707-302151/testdata/directory",
+    "file": "/home/lzq/project2721707-302151/testdata/directory/drivers/device.c",
+    "output": "/home/lzq/project2721707-302151/testdata/directory/obj/drivers/device.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/clang-14",
+      "-Iinclude",
+      "-Wall",
+      "-g",
+      "-c",
+      "-o",
+      "obj/utils/calc.o",
+      "utils/calc.c"
+    ],
+    "directory": "/home/lzq/project2721707-302151/testdata/directory",
+    "file": "/home/lzq/project2721707-302151/testdata/directory/utils/calc.c",
+    "output": "/home/lzq/project2721707-302151/testdata/directory/obj/utils/calc.o"
+  }
+]

@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Visual X - C语言代码静态分析平台
+  visual-x:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: visual-x
+    restart: unless-stopped
+    ports:
+      - "5001:5001"   # 前端界面端口
+      - "5002:5002"   # 后端API端口
+    environment:
+      # Gemini API配置（必需）
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GEMINI_PROXY_HOST=${GEMINI_PROXY_HOST:-192.168.93.1}
+      - GEMINI_PROXY_PORT=${GEMINI_PROXY_PORT:-7890}
+      
+      # 服务配置
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=5002
+      - FRONTEND_HOST=0.0.0.0
+      - FRONTEND_PORT=5001
+      
+      # 路径配置
+      - PROJECT_PATH=/app/projects
+      - DATABASE_PATH=/app/data
+      - DATABASE_FILE=${DATABASE_FILE:-}
+      
+      # 开发/生产通用配置
+      - PYTHONUNBUFFERED=1
+      - DEBIAN_FRONTEND=noninteractive
+      - DEBUG=${DEBUG:-false}
+      - FLASK_ENV=${FLASK_ENV:-production}
+    volumes:
+      # 挂载C项目源码目录
+      - ${PROJECT_SOURCE_PATH:-./projects}:/app/projects:ro
+      # 挂载数据库存储目录
+      - ${DATABASE_STORAGE_PATH:-./data}:/app/data
+      # 挂载日志目录
+      - ${LOG_PATH:-./logs}:/var/log
+      # 可选：挂载自定义配置
+      - ${CONFIG_PATH:-./config}:/app/config:ro
+    networks:
+      - visual-x-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+
+networks:
+  visual-x-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

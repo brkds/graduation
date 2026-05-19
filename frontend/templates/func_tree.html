@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>文件目录树（懒加载）</title>
+  <script src="static/vue.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    ul {
+      list-style: none;
+      padding-left: 1em;
+      margin: 0;
+    }
+    li {
+      position: relative;
+      padding: 4px 0;
+    }
+    li::before {
+      content: "";
+      position: absolute;
+      left: -15px;
+      top: 0;
+      height: 100%;
+      border-left: 1px dashed #aaa;
+    }
+    li:first-child::before {
+      top: 12px;
+      height: calc(100% - 12px);
+    }
+    li:last-child::before {
+      height: 12px;
+    }
+    .folder {
+      font-weight: bold;
+    }
+    .node-content {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .node-content:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      background: #f0f7ff;
+    }
+    .loading-placeholder {
+      color: #999;
+      font-style: italic;
+      padding-left: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h2><img src="static/icons/folder.svg" alt="图标" width="30" height="30"> 文件目录树（懒加载）</h2>
+    <div v-if="loading">加载中...</div>
+    <ul v-else>
+      <tree-node 
+        v-for="(node, index) in tree" 
+        :key="'root-' + index" 
+        :node="node"
+      ></tree-node>
+    </ul>
+  </div>
+
+  <script>
+    const { createApp, ref, defineComponent } = Vue;
+
+    // 递归树节点组件
+    const TreeNode = defineComponent({
+      name: 'TreeNode',
+      props: ['node'],
+      setup(props) {
+        const isOpen = ref(false);
+        const isLoading = ref(false);
+        const children = ref(props.node.children || []);
+
+        // 切换展开/折叠
+        const toggle = async () => {
+        console.log('toggle triggered', props.node.name);
+          if (props.node.type !== 'folder') return;
+
+          // 如果要展开，且还没有子节点数据，则懒加载
+          if (!isOpen.value) {
+            // 如果 children 为空且 has_children 为 true，说明需要从服务器加载
+            if (children.value.length === 0 && props.node.has_children) {
+              isLoading.value = true;
+              try {
+                const path = props.node.full_path || props.node.name;
+                const res = await fetch(`http://localhost:5002/directory_children?path=${encodeURIComponent(path)}`);
+                const data = await res.json();
+                children.value = data;
+              } catch (err) {
+                console.error('加载子目录失败:', err);
+              } finally {
+                isLoading.value = false;
+              }
+            }
+            isOpen.value = true;
+          } else {
+            isOpen.value = false;
+          }
+        };
+
+        return { isOpen, isLoading, children, toggle };
+      },
+      template: `
+        <li>
+          <div @click="toggle" class="node-content">
+            <!-- 文件夹图标区域 -->
+            <span v-if="node.type === 'folder'">
+              <img v-show="isOpen" style="margin-right:10px;" src="static/icons/pixel--chevron-down.svg" width="20" height="20">
+              <img v-show="isOpen" src="static/icons/pixel--folder.svg" width="24" height="24">
+              <img v-show="!isOpen" style="margin-right:5px;" src="static/icons/pixel--angle-right.svg" width="24" height="24">
+              <img v-show="!isOpen" src="static/icons/pixel--folder-open.svg" width="24" height="24">
+              <span class="folder">{{ node.name }}</span>
+            </span>
+            <!-- 文件图标 -->
+            <span v-else>
+              <img src="static/icons/file.svg" width="24" height="24"> {{ node.name }}
+            </span>
+          </div>
+          
+          <!-- 加载中占位 -->
+          <div v-if="isLoading" class="loading-placeholder">加载中...</div>
+          
+          <!-- 子节点列表 -->
+          <ul v-if="isOpen && children.length">
+            <tree-node
+              v-for="(child, index) in children"
+              :key="child.full_path || child.name + '-' + index"
+              :node="child"
+            ></tree-node>
+          </ul>
+        </li>
+      `
+    });
+
+    const app = createApp({
+      components: { TreeNode },
+      setup() {
+        const tree = ref([]);
+        const loading = ref(true);
+
+        // 初次只加载根节点
+        fetch('http://localhost:5002/func_tree')
+          .then(res => res.json())
+          .then(data => {
+            // 后端返回的根节点数据格式：
+            // [{ name, full_path, type, has_children, children: [] }]
+            tree.value = data;
+            loading.value = false;
+          })
+          .catch(err => {
+            console.error('加载文件树失败:', err);
+            loading.value = false;
+          });
+
+        return { tree, loading };
+      }
+    });
+
+    app.mount('#app');
+  </script>
+</body>
+</html>

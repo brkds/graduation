@@ -1,0 +1,62 @@
+=== 硬件检查 ===
+内存信息:
+               total        used        free      shared  buff/cache   available
+内存：      3.8Gi       1.5Gi       384Mi        36Mi       1.9Gi       2.0Gi
+交换：      3.8Gi          0B       3.8Gi
+
+存储空间:
+文件系统        大小  已用  可用 已用% 挂载点
+/dev/sda3        59G   29G   27G   52% /
+
+存储类型:
+NAME   ROTA
+loop0     1
+loop1     1
+loop2     1
+loop3     1
+loop4     1
+loop5     1
+loop6     1
+loop7     1
+loop8     1
+loop9     1
+loop10    1
+loop11    1
+loop12    1
+loop13    1
+sda       1
+sr0       1
+
+=== 软件检查 ===
+操作系统版本:
+Distributor ID:	Ubuntu
+Description:	Ubuntu 22.04.4 LTS
+Release:	22.04
+Codename:	jammy
+
+Python 版本:
+Python 3.10.12
+
+pip 版本:
+pip 22.0.2 from /usr/lib/python3/dist-packages/pip (python 3.10)
+
+SQLite 版本:
+3.37.2 2022-01-06 13:25:41 872ba256cbf61d9290b571c0e6d82a20c224ca3ad82971edc46b29818d5dalt1
+
+gcc 版本:
+gcc (Ubuntu 12.3.0-1ubuntu1~22.04) 12.3.0
+
+nm 版本:
+GNU nm (GNU Binutils for Ubuntu) 2.38
+
+objdump 版本:
+GNU objdump (GNU Binutils for Ubuntu) 2.38
+
+工具链完整性:
+gcc OK
+nm OK
+objdump OK
+
+Python 依赖:
+3.1.1 2.0.41
+

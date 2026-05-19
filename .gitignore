@@ -1,0 +1,52 @@
+testdata/linux_full/
+testdata/linux-6.6/
+testdata/linux_module/
+testdata/linux-6.6.tar.xz
+testdata/linux_full/linux-6.6/
+testdata/xv6-public/
+testdata/espeak-ng/
+testdata/liboqs/
+
+output/
+obj/
+backup/
+.vscode/
+docs/
+kernel_analyzer*
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.txt
+*.cache
+*.tar
+.env
+
+
+# frontend
+# frontend/
+
+# backend
+__pycache__/
+backend/venv/
+backend/config.py
+backend/tests/
+backend/.env
+
+# cross_validation
+# cross_validation/comparison_results/
+# cross_validation/database_export/
+# cross_validation/groundtruth/
+cross_validation/comparison_results_full/
+cross_validation/database_export_full/
+cross_validation/groundtruth_full/
+cross_validation/comparison_results_full/
+cross_validation/uncovered_symbols_samples.json
+cross_validation/FULL_SCALE_VALIDATION_REPORT.md
+
+ctags_validation/*output/
+ctags_validation/*.json
+ctags_validation/coccinelle_validation/docs/
+
+test_report/
+frontend.md

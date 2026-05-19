@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linux代码分析API测试界面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .search-box {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            padding: 8px;
+            width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            background-color: #ddd;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        .tab-button.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+            background-color: white;
+            border-radius: 0 0 4px 4px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .pagination {
+            margin: 20px 0;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Linux代码分析API测试界面</h1>
+    
+    <div class="tab-container">
+        <button class="tab-button active" onclick="switchTab('functions')">函数</button>
+        <button class="tab-button" onclick="switchTab('variables')">变量</button>
+        <button class="tab-button" onclick="switchTab('relationships')">关系</button>
+        <button class="tab-button" onclick="switchTab('pointers')">指针分析</button>
+    </div>
+
+    <div id="functions" class="tab-content active container">
+        <h2>函数查询</h2>
+        <div class="search-box">
+            <input type="text" id="function-search" placeholder="输入函数名搜索...">
+            <button onclick="searchFunctions()">搜索</button>
+        </div>
+        <div id="function-results"></div>
+        <div class="pagination" id="function-pagination"></div>
+    </div>
+
+    <div id="variables" class="tab-content container">
+        <h2>变量查询</h2>
+        <div class="search-box">
+            <input type="text" id="variable-search" placeholder="输入变量名搜索...">
+            <button onclick="searchVariables()">搜索</button>
+        </div>
+        <div id="variable-results"></div>
+        <div class="pagination" id="variable-pagination"></div>
+    </div>
+
+    <div id="relationships" class="tab-content container">
+        <h2>关系查询</h2>
+        <button onclick="getRelationships()">获取所有关系</button>
+        <div id="relationship-results"></div>
+    </div>
+
+    <div id="pointers" class="tab-content container">
+        <h2>指针分析</h2>
+        <button onclick="getPointerAnalysis()">获取指针统计</button>
+        <div id="pointer-results"></div>
+    </div>
+
+    <script>
+        // const API_BASE = '/api/v1';
+        const API_BASE = '127.0.0.1:5002';
+        let currentPage = 1;
+        let itemsPerPage = 20;
+
+        async function fetchAPI(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '请求失败');
+                }
+                return await response.json();
+            } catch (error) {
+                throw new Error(`API请求失败: ${error.message}`);
+            }
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            document.querySelector(`button[onclick="switchTab('${tabName}')"]`).classList.add('active');
+        }
+
+        function displayError(message) {
+            return `<div class="error">错误: ${message}</div>`;
+        }
+
+        function formatJSON(data) {
+            if (!data) return '';
+            return `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        }
+
+        async function searchFunctions(page = 1) {
+            const searchTerm = document.getElementById('function-search').value;
+            try {
+                const data = await fetchAPI(`${API_BASE}/functions?search=${searchTerm}&page=${page}&per_page=${itemsPerPage}`);
+                
+                let html = `<h3>找到 ${data.total || 0} 个函数</h3>`;
+                if (data.error) {
+                    html += displayError(data.message);
+                } else {
+                    html += formatJSON(data.functions);
+                    
+                    // 分页
+                    const totalPages = Math.ceil(data.total / itemsPerPage);
+                    let paginationHtml = '';
+                    for (let i = 1; i <= totalPages; i++) {
+                        paginationHtml += `<button onclick="searchFunctions(${i})" ${i === page ? 'disabled' : ''}>${i}</button>`;
+                    }
+                    document.getElementById('function-pagination').innerHTML = paginationHtml;
+                }
+                
+                document.getElementById('function-results').innerHTML = html;
+            } catch (error) {
+                document.getElementById('function-results').innerHTML = displayError(error.message);
+                document.getElementById('function-pagination').innerHTML = '';
+            }
+        }
+
+        async function searchVariables(page = 1) {
+            const searchTerm = document.getElementById('variable-search').value;
+            try {
+                const data = await fetchAPI(`${API_BASE}/variables?search=${searchTerm}&page=${page}&per_page=${itemsPerPage}`);
+                
+                let html = `<h3>找到 ${data.total || 0} 个变量</h3>`;
+                if (data.error) {
+                    html += displayError(data.message);
+                } else {
+                    html += formatJSON(data.variables);
+                    
+                    // 分页
+                    const totalPages = Math.ceil(data.total / itemsPerPage);
+                    let paginationHtml = '';
+                    for (let i = 1; i <= totalPages; i++) {
+                        paginationHtml += `<button onclick="searchVariables(${i})" ${i === page ? 'disabled' : ''}>${i}</button>`;
+                    }
+                    document.getElementById('variable-pagination').innerHTML = paginationHtml;
+                }
+                
+                document.getElementById('variable-results').innerHTML = html;
+            } catch (error) {
+                document.getElementById('variable-results').innerHTML = displayError(error.message);
+                document.getElementById('variable-pagination').innerHTML = '';
+            }
+        }
+
+        async function getRelationships() {
+            try {
+                const data = await fetchAPI(`${API_BASE}/relationships`);
+                if (data.error) {
+                    document.getElementById('relationship-results').innerHTML = displayError(data.message);
+                } else {
+                    document.getElementById('relationship-results').innerHTML = formatJSON(data.relationships);
+                }
+            } catch (error) {
+                document.getElementById('relationship-results').innerHTML = displayError(error.message);
+            }
+        }
+
+        async function getPointerAnalysis() {
+            try {
+                const data = await fetchAPI(`${API_BASE}/pointer-analysis`);
+                if (data.error) {
+                    document.getElementById('pointer-results').innerHTML = displayError(data.message);
+                } else {
+                    document.getElementById('pointer-results').innerHTML = formatJSON(data);
+                }
+            } catch (error) {
+                document.getElementById('pointer-results').innerHTML = displayError(error.message);
+            }
+        }
+
+        // 初始加载
+        searchFunctions();
+    </script>
+</body>
+</html> 
