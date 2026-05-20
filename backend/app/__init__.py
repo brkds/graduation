@@ -22,7 +22,7 @@ def create_app(config_class=Config):
     compat_bp = Blueprint('compat', __name__)
     
     # 导入路由函数并添加到兼容蓝图
-    from app.api.routes import re_func_tree, get_graph, get_dir_children ,search, search_suggest, search_detail, get_func_body, get_hot_access_variables, get_hot_functions, get_hot_access_functions, get_file_statistics, get_global_statistics, get_function_calls, analyze_path, get_file_content, ai_analyze_overview, ai_analyze_file, ai_analyze_function, ai_analyze_call_chain, ai_analyze_variable, ai_analyze_pointer
+    from app.api.routes import re_func_tree, get_graph, get_dir_children ,search, search_suggest, search_detail, get_func_body, get_hot_access_variables, get_hot_functions, get_hot_access_functions, get_file_statistics, get_global_statistics, get_function_calls, analyze_path, get_file_content, get_node_graph, ai_analyze_overview, ai_analyze_file, ai_analyze_function, ai_analyze_call_chain, ai_analyze_variable, ai_analyze_pointer
     compat_bp.add_url_rule('/func_tree', 'func_tree', re_func_tree, methods=['GET'])
     compat_bp.add_url_rule('/graph', 'graph', get_graph, methods=['GET'])
     compat_bp.add_url_rule('/search', 'search', search, methods=['GET'])
@@ -36,6 +36,7 @@ def create_app(config_class=Config):
     # 新增路径分析API
     compat_bp.add_url_rule('/directory_children', 'directory_children', get_dir_children, methods=['GET'])
     compat_bp.add_url_rule('/api/path_analysis', 'path_analysis', analyze_path, methods=['GET'])
+    compat_bp.add_url_rule('/node_graph', 'node_graph', get_node_graph, methods=['GET'])
     # 为了兼容性，保持旧的hot_variables路由指向新的函数
     compat_bp.add_url_rule('/hot_variables', 'hot_variables', get_hot_access_variables, methods=['GET'])
     # 添加热点函数相关路由

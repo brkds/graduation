@@ -18,6 +18,7 @@ kernel_analyzer*
 *.db-shm
 *.db-wal
 *.txt
+*.log
 *.cache
 *.tar
 .env

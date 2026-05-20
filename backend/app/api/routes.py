@@ -23,14 +23,16 @@ def handle_db_error(error):
 
 # ---------- 辅助函数：ID解析（适配联合主键） ----------
 def parse_entity_id(item_id, prefix):
-    """解析形如 prefix_名称_encodedPath 的ID，返回 (name, file_path)。"""
+    """解析形如 prefix_名称_encodedPath 的ID，返回 (name, file_path)。
+    使用 '/' 定位文件路径起始位置（因为名称可包含下划线）。"""
     if not item_id.startswith(prefix):
         return None, None
     rest = item_id[len(prefix):]
-    parts = rest.split('_', 1)
-    if len(parts) == 2:
-        name = parts[0]
-        file_path = unquote(parts[1])
+    # 文件路径以 '/' 开头，找到第一个 '/' 来分离名称和路径
+    slash_idx = rest.find('/')
+    if slash_idx > 0:
+        name = rest[:slash_idx].rstrip('_')
+        file_path = rest[slash_idx:]
         return name, file_path
     else:
         return rest, None
@@ -1119,6 +1121,414 @@ def get_file_content():
     except Exception as e:
         current_app.logger.error(f'获取文件内容失败: {str(e)}')
         return jsonify({'error': True, 'message': '获取文件内容失败', 'details': str(e)}), 500
+
+
+@api_bp.route('/node_graph', methods=['GET'])
+def get_node_graph():
+    """获取以指定节点为中心的连通关系图，支持跨文件关系"""
+    try:
+        node_id = request.args.get('node_id')
+        max_depth = request.args.get('max_depth', 3, type=int)
+        if not node_id:
+            return jsonify({'error': True, 'message': '请提供节点ID'}), 400
+
+        # 解析节点ID
+        entity_type = None
+        entity_name = None
+        entity_file_path = None
+
+        if node_id.startswith('func_') and not node_id.startswith('func_ptr_'):
+            entity_type = 'function'
+            entity_name, entity_file_path = parse_entity_id(node_id, 'func_')
+        elif node_id.startswith('var_'):
+            entity_type = 'variable'
+            entity_name, entity_file_path = parse_entity_id(node_id, 'var_')
+        elif node_id.startswith('data_ptr_'):
+            entity_type = 'data_pointer'
+            entity_name, entity_file_path = parse_entity_id(node_id, 'data_ptr_')
+        elif node_id.startswith('func_ptr_'):
+            entity_type = 'function_pointer'
+            entity_name, entity_file_path = parse_entity_id(node_id, 'func_ptr_')
+        else:
+            entity_name = node_id
+            func = Function.query.filter_by(name=entity_name).first()
+            if func:
+                entity_type = 'function'
+                entity_file_path = func.file_path
+            else:
+                var = GlobalVariable.query.filter_by(name=entity_name).first()
+                if var:
+                    entity_type = 'variable'
+                    entity_file_path = var.file_path
+                else:
+                    return jsonify({'error': True, 'message': f'未找到节点: {node_id}'}), 404
+
+        def make_id(prefix, name, path):
+            safe_path = path.replace('/', '_').replace('.', '_').replace('-', '_')
+            return f"{prefix}_{name}_{safe_path}"
+
+        all_nodes = []
+        all_edges = []
+        seen_node_ids = set()
+
+        def add_node(n):
+            if n['id'] not in seen_node_ids:
+                seen_node_ids.add(n['id'])
+                all_nodes.append(n)
+
+        # 确定目标节点ID
+        if entity_file_path:
+            prefix_map = {'function': 'func', 'variable': 'var', 'data_pointer': 'data_ptr', 'function_pointer': 'func_ptr'}
+            target_node_id = make_id(prefix_map[entity_type], entity_name, entity_file_path)
+        else:
+            target_node_id = node_id
+
+        related_file_paths = set()
+        if entity_file_path:
+            related_file_paths.add(entity_file_path)
+
+        if entity_type == 'function':
+            func = Function.query.filter_by(name=entity_name, file_path=entity_file_path).first()
+            if not func:
+                return jsonify({'error': True, 'message': '函数不存在'}), 404
+
+            add_node({
+                'id': target_node_id, 'label': func.name, 'type': 'function',
+                'data': {'name': func.name, 'return_type': func.return_type,
+                         'parameters': func.parameters, 'file_path': func.file_path,
+                         'location': {'start_line': func.start_line, 'end_line': func.end_line}}
+            })
+
+            file_funcs = Function.query.filter_by(file_path=entity_file_path).all()
+            file_vars = GlobalVariable.query.filter_by(file_path=entity_file_path).all()
+            file_dptrs = DataPointer.query.filter_by(file_path=entity_file_path).all()
+            file_fptrs = FunctionPointer.query.filter_by(file_path=entity_file_path).all()
+
+            func_name_to_id = {}
+            for f in file_funcs:
+                nid = make_id('func', f.name, f.file_path)
+                func_name_to_id[f.name] = nid
+                add_node({'id': nid, 'label': f.name, 'type': 'function',
+                          'data': {'name': f.name, 'return_type': f.return_type,
+                                   'parameters': f.parameters, 'file_path': f.file_path,
+                                   'location': {'start_line': f.start_line, 'end_line': f.end_line}}})
+
+            var_name_to_id = {}
+            for v in file_vars:
+                nid = make_id('var', v.name, v.file_path)
+                var_name_to_id[v.name] = nid
+                add_node({'id': nid, 'label': v.name, 'type': 'variable',
+                          'data': {'name': v.name, 'var_type': v.type,
+                                   'is_static': v.is_static, 'file_path': v.file_path,
+                                   'line_number': v.line_number}})
+
+            for ptr in file_dptrs:
+                nid = make_id('data_ptr', ptr.pointer_name, ptr.file_path)
+                add_node({'id': nid, 'label': ptr.pointer_name, 'type': 'data_pointer',
+                          'data': {'pointer_name': ptr.pointer_name,
+                                   'points_to_var_name': ptr.points_to_var_name,
+                                   'file_path': ptr.file_path, 'line_number': ptr.line_number}})
+
+            for ptr in file_fptrs:
+                nid = make_id('func_ptr', ptr.pointer_name, ptr.file_path)
+                add_node({'id': nid, 'label': ptr.pointer_name, 'type': 'function_pointer',
+                          'data': {'pointer_name': ptr.pointer_name,
+                                   'points_to_func_name': ptr.points_to_func_name,
+                                   'file_path': ptr.file_path, 'line_number': ptr.line_number}})
+
+            # 同文件访问关系
+            if func_name_to_id:
+                access_rels = AccessRelation.query.filter(
+                    AccessRelation.func_name.in_(list(func_name_to_id.keys())),
+                    AccessRelation.access_file_path == entity_file_path
+                ).all()
+                for rel in access_rels:
+                    from_id = func_name_to_id.get(rel.func_name)
+                    to_id = var_name_to_id.get(rel.var_name)
+                    if not from_id:
+                        continue
+                    if not to_id:
+                        ext_var = GlobalVariable.query.filter_by(name=rel.var_name, is_static=0).first()
+                        if ext_var:
+                            to_id = make_id('var', ext_var.name, ext_var.file_path)
+                            add_node({'id': to_id, 'label': f"{ext_var.name} (外部:{os.path.basename(ext_var.file_path)})",
+                                      'type': 'variable',
+                                      'data': {'name': ext_var.name, 'var_type': ext_var.type,
+                                               'is_static': ext_var.is_static, 'file_path': ext_var.file_path,
+                                               'line_number': ext_var.line_number}})
+                            related_file_paths.add(ext_var.file_path)
+                    if from_id and to_id:
+                        all_edges.append({'id': f"access_{rel.func_name}_{rel.var_name}_{rel.access_line_number}_{rel.access_type}",
+                                          'from': from_id, 'to': to_id, 'type': 'access',
+                                          'access_type': rel.access_type, 'line_number': rel.access_line_number,
+                                          'label': rel.access_type})
+
+            # 数据指针边
+            for ptr in file_dptrs:
+                from_id = make_id('data_ptr', ptr.pointer_name, ptr.file_path)
+                to_id = var_name_to_id.get(ptr.points_to_var_name)
+                if not to_id:
+                    ext_var = GlobalVariable.query.filter_by(name=ptr.points_to_var_name, is_static=0).first()
+                    if ext_var:
+                        to_id = make_id('var', ext_var.name, ext_var.file_path)
+                        add_node({'id': to_id, 'label': f"{ext_var.name} (外部:{os.path.basename(ext_var.file_path)})",
+                                  'type': 'variable',
+                                  'data': {'name': ext_var.name, 'var_type': ext_var.type,
+                                           'is_static': ext_var.is_static, 'file_path': ext_var.file_path,
+                                           'line_number': ext_var.line_number}})
+                if from_id and to_id:
+                    all_edges.append({'id': f"data_ptr_{ptr.pointer_name}_{ptr.line_number}",
+                                      'from': from_id, 'to': to_id, 'type': 'data_points_to',
+                                      'line_number': ptr.line_number, 'label': 'points to'})
+
+            # 函数指针边
+            for ptr in file_fptrs:
+                if not ptr.points_to_func_name:
+                    continue
+                from_id = make_id('func_ptr', ptr.pointer_name, ptr.file_path)
+                to_id = func_name_to_id.get(ptr.points_to_func_name)
+                if not to_id:
+                    ext_func = Function.query.filter_by(name=ptr.points_to_func_name, is_static=0).first()
+                    if ext_func:
+                        to_id = make_id('func', ext_func.name, ext_func.file_path)
+                        add_node({'id': to_id, 'label': f"{ext_func.name} (外部:{os.path.basename(ext_func.file_path)})",
+                                  'type': 'function',
+                                  'data': {'name': ext_func.name, 'return_type': ext_func.return_type,
+                                           'parameters': ext_func.parameters, 'file_path': ext_func.file_path,
+                                           'location': {'start_line': ext_func.start_line, 'end_line': ext_func.end_line}}})
+                if from_id and to_id:
+                    all_edges.append({'id': f"func_ptr_{ptr.pointer_name}_{ptr.line_number}",
+                                      'from': from_id, 'to': to_id, 'type': 'func_points_to',
+                                      'line_number': ptr.line_number, 'label': 'points to'})
+
+            # 调用关系（跨文件）
+            calls_made = CallRelation.query.filter_by(caller_name=entity_name).all()
+            for call in calls_made:
+                from_id = func_name_to_id.get(call.caller_name)
+                if not from_id:
+                    continue
+                to_id = func_name_to_id.get(call.callee_name)
+                if not to_id:
+                    callee_func = Function.query.filter_by(name=call.callee_name, is_static=0).first()
+                    if callee_func and callee_func.file_path != entity_file_path:
+                        to_id = make_id('func', callee_func.name, callee_func.file_path)
+                        add_node({'id': to_id, 'label': f"{callee_func.name} (外部:{os.path.basename(callee_func.file_path)})",
+                                  'type': 'function',
+                                  'data': {'name': callee_func.name, 'return_type': callee_func.return_type,
+                                           'parameters': callee_func.parameters, 'file_path': callee_func.file_path,
+                                           'location': {'start_line': callee_func.start_line, 'end_line': callee_func.end_line}}})
+                if from_id and to_id:
+                    all_edges.append({'id': f"call_{call.caller_name}_{call.callee_name}_{call.call_site_line_number}",
+                                      'from': from_id, 'to': to_id, 'type': 'call',
+                                      'line_number': call.call_site_line_number, 'label': 'calls'})
+
+            calls_received = CallRelation.query.filter_by(callee_name=entity_name).all()
+            for call in calls_received:
+                to_id = func_name_to_id.get(call.callee_name)
+                if not to_id:
+                    continue
+                from_id = func_name_to_id.get(call.caller_name)
+                if not from_id:
+                    caller_func = Function.query.filter_by(name=call.caller_name, is_static=0).first()
+                    if caller_func and caller_func.file_path != entity_file_path:
+                        from_id = make_id('func', caller_func.name, caller_func.file_path)
+                        add_node({'id': from_id, 'label': f"{caller_func.name} (外部:{os.path.basename(caller_func.file_path)})",
+                                  'type': 'function',
+                                  'data': {'name': caller_func.name, 'return_type': caller_func.return_type,
+                                           'parameters': caller_func.parameters, 'file_path': caller_func.file_path,
+                                           'location': {'start_line': caller_func.start_line, 'end_line': caller_func.end_line}}})
+                if from_id and to_id:
+                    all_edges.append({'id': f"call_{call.caller_name}_{call.callee_name}_{call.call_site_line_number}",
+                                      'from': from_id, 'to': to_id, 'type': 'call',
+                                      'line_number': call.call_site_line_number, 'label': 'calls'})
+
+        elif entity_type == 'variable':
+            var = GlobalVariable.query.filter_by(name=entity_name, file_path=entity_file_path).first()
+            if not var:
+                return jsonify({'error': True, 'message': '变量不存在'}), 404
+
+            target_node_id = make_id('var', var.name, var.file_path)
+            add_node({'id': target_node_id, 'label': var.name, 'type': 'variable',
+                      'data': {'name': var.name, 'var_type': var.type,
+                               'is_static': var.is_static, 'file_path': var.file_path,
+                               'line_number': var.line_number}})
+
+            file_funcs = Function.query.filter_by(file_path=entity_file_path).all()
+            file_dptrs = DataPointer.query.filter_by(file_path=entity_file_path).all()
+
+            func_name_to_id = {}
+            for f in file_funcs:
+                nid = make_id('func', f.name, f.file_path)
+                func_name_to_id[f.name] = nid
+                add_node({'id': nid, 'label': f.name, 'type': 'function',
+                          'data': {'name': f.name, 'return_type': f.return_type,
+                                   'parameters': f.parameters, 'file_path': f.file_path,
+                                   'location': {'start_line': f.start_line, 'end_line': f.end_line}}})
+
+            # 谁访问了这个变量
+            access_rels = AccessRelation.query.filter_by(var_name=entity_name).all()
+            for rel in access_rels:
+                from_id = func_name_to_id.get(rel.func_name)
+                if not from_id:
+                    accessor_func = Function.query.filter_by(name=rel.func_name, is_static=0).first()
+                    if accessor_func:
+                        from_id = make_id('func', accessor_func.name, accessor_func.file_path)
+                        add_node({'id': from_id, 'label': f"{accessor_func.name} (外部:{os.path.basename(accessor_func.file_path)})",
+                                  'type': 'function',
+                                  'data': {'name': accessor_func.name, 'return_type': accessor_func.return_type,
+                                           'parameters': accessor_func.parameters, 'file_path': accessor_func.file_path,
+                                           'location': {'start_line': accessor_func.start_line, 'end_line': accessor_func.end_line}}})
+                if from_id:
+                    all_edges.append({'id': f"access_{rel.func_name}_{rel.var_name}_{rel.access_line_number}_{rel.access_type}",
+                                      'from': from_id, 'to': target_node_id, 'type': 'access',
+                                      'access_type': rel.access_type, 'line_number': rel.access_line_number,
+                                      'label': rel.access_type})
+
+            # 数据指针指向
+            for ptr in file_dptrs:
+                nid = make_id('data_ptr', ptr.pointer_name, ptr.file_path)
+                add_node({'id': nid, 'label': ptr.pointer_name, 'type': 'data_pointer',
+                          'data': {'pointer_name': ptr.pointer_name,
+                                   'points_to_var_name': ptr.points_to_var_name,
+                                   'file_path': ptr.file_path, 'line_number': ptr.line_number}})
+                if ptr.points_to_var_name == entity_name:
+                    all_edges.append({'id': f"data_ptr_{ptr.pointer_name}_{ptr.line_number}",
+                                      'from': nid, 'to': target_node_id, 'type': 'data_points_to',
+                                      'line_number': ptr.line_number, 'label': 'points to'})
+
+            ext_dptrs = DataPointer.query.filter(DataPointer.points_to_var_name == entity_name,
+                                                  DataPointer.file_path != entity_file_path).all()
+            for ptr in ext_dptrs:
+                nid = make_id('data_ptr', ptr.pointer_name, ptr.file_path)
+                add_node({'id': nid, 'label': f"{ptr.pointer_name} (外部:{os.path.basename(ptr.file_path)})",
+                          'type': 'data_pointer',
+                          'data': {'pointer_name': ptr.pointer_name,
+                                   'points_to_var_name': ptr.points_to_var_name,
+                                   'file_path': ptr.file_path, 'line_number': ptr.line_number}})
+                all_edges.append({'id': f"data_ptr_{ptr.pointer_name}_{ptr.line_number}",
+                                  'from': nid, 'to': target_node_id, 'type': 'data_points_to',
+                                  'line_number': ptr.line_number, 'label': 'points to'})
+
+        elif entity_type in ('data_pointer', 'function_pointer'):
+            if entity_type == 'data_pointer':
+                ptr = DataPointer.query.filter_by(pointer_name=entity_name, file_path=entity_file_path).first()
+                if not ptr:
+                    return jsonify({'error': True, 'message': '数据指针不存在'}), 404
+                target_node_id = make_id('data_ptr', ptr.pointer_name, ptr.file_path)
+                add_node({'id': target_node_id, 'label': ptr.pointer_name, 'type': 'data_pointer',
+                          'data': {'pointer_name': ptr.pointer_name,
+                                   'points_to_var_name': ptr.points_to_var_name,
+                                   'file_path': ptr.file_path, 'line_number': ptr.line_number}})
+                target_var = GlobalVariable.query.filter_by(name=ptr.points_to_var_name).first()
+                if target_var:
+                    is_external = target_var.file_path != entity_file_path
+                    var_id = make_id('var', target_var.name, target_var.file_path)
+                    add_node({'id': var_id,
+                              'label': f"{target_var.name} (外部:{os.path.basename(target_var.file_path)})" if is_external else target_var.name,
+                              'type': 'variable',
+                              'data': {'name': target_var.name, 'var_type': target_var.type,
+                                       'is_static': target_var.is_static, 'file_path': target_var.file_path,
+                                       'line_number': target_var.line_number}})
+                    all_edges.append({'id': f"data_ptr_{ptr.pointer_name}_{ptr.line_number}",
+                                      'from': target_node_id, 'to': var_id, 'type': 'data_points_to',
+                                      'line_number': ptr.line_number, 'label': 'points to'})
+            else:
+                ptr = FunctionPointer.query.filter_by(pointer_name=entity_name, file_path=entity_file_path).first()
+                if not ptr:
+                    return jsonify({'error': True, 'message': '函数指针不存在'}), 404
+                target_node_id = make_id('func_ptr', ptr.pointer_name, ptr.file_path)
+                add_node({'id': target_node_id, 'label': ptr.pointer_name, 'type': 'function_pointer',
+                          'data': {'pointer_name': ptr.pointer_name,
+                                   'points_to_func_name': ptr.points_to_func_name,
+                                   'file_path': ptr.file_path, 'line_number': ptr.line_number}})
+                if ptr.points_to_func_name:
+                    target_func = Function.query.filter_by(name=ptr.points_to_func_name).first()
+                    if target_func:
+                        is_external = target_func.file_path != entity_file_path
+                        func_id = make_id('func', target_func.name, target_func.file_path)
+                        add_node({'id': func_id,
+                                  'label': f"{target_func.name} (外部:{os.path.basename(target_func.file_path)})" if is_external else target_func.name,
+                                  'type': 'function',
+                                  'data': {'name': target_func.name, 'return_type': target_func.return_type,
+                                           'parameters': target_func.parameters, 'file_path': target_func.file_path,
+                                           'location': {'start_line': target_func.start_line, 'end_line': target_func.end_line}}})
+                        all_edges.append({'id': f"func_ptr_{ptr.pointer_name}_{ptr.line_number}",
+                                          'from': target_node_id, 'to': func_id, 'type': 'func_points_to',
+                                          'line_number': ptr.line_number, 'label': 'points to'})
+
+            # 同文件上下文
+            if entity_file_path:
+                file_funcs = Function.query.filter_by(file_path=entity_file_path).all()
+                func_names = [f.name for f in file_funcs]
+                func_name_to_id = {}
+                for f in file_funcs:
+                    nid = make_id('func', f.name, f.file_path)
+                    func_name_to_id[f.name] = nid
+                    add_node({'id': nid, 'label': f.name, 'type': 'function',
+                              'data': {'name': f.name, 'return_type': f.return_type,
+                                       'parameters': f.parameters, 'file_path': f.file_path,
+                                       'location': {'start_line': f.start_line, 'end_line': f.end_line}}})
+
+                if func_names:
+                    file_vars = GlobalVariable.query.filter_by(file_path=entity_file_path).all()
+                    var_name_to_id = {}
+                    for v in file_vars:
+                        nid = make_id('var', v.name, v.file_path)
+                        var_name_to_id[v.name] = nid
+                        add_node({'id': nid, 'label': v.name, 'type': 'variable',
+                                  'data': {'name': v.name, 'var_type': v.type,
+                                           'is_static': v.is_static, 'file_path': v.file_path,
+                                           'line_number': v.line_number}})
+
+                    access_rels = AccessRelation.query.filter(
+                        AccessRelation.func_name.in_(func_names),
+                        AccessRelation.access_file_path == entity_file_path
+                    ).all()
+                    for rel in access_rels:
+                        from_id = func_name_to_id.get(rel.func_name)
+                        to_id = var_name_to_id.get(rel.var_name)
+                        if from_id and to_id:
+                            all_edges.append({'id': f"access_{rel.func_name}_{rel.var_name}_{rel.access_line_number}_{rel.access_type}",
+                                              'from': from_id, 'to': to_id, 'type': 'access',
+                                              'access_type': rel.access_type, 'line_number': rel.access_line_number,
+                                              'label': rel.access_type})
+
+        # 边去重
+        seen_edge_ids = set()
+        unique_edges = []
+        for e in all_edges:
+            if e['id'] not in seen_edge_ids:
+                seen_edge_ids.add(e['id'])
+                unique_edges.append(e)
+
+        # 连通子图过滤
+        connected = get_connected_subgraph(all_nodes, unique_edges, target_node_id, max_depth)
+
+        layout_mode = request.args.get('layout', 'spring')
+        graph = compute_graph_layout(
+            connected["nodes"], connected["edges"],
+            layout=layout_mode, k=0.9, iterations=40,
+            x_gap=160, y_gap=180, max_cols=10
+        )
+
+        return jsonify({
+            'target_node_id': target_node_id,
+            'target_type': entity_type,
+            'target_name': entity_name,
+            'nodes': process_nodes_with_color(graph["nodes"]),
+            'edges': process_edges_with_color(graph["edges"]),
+            'stats': {
+                'total_nodes': connected["total_nodes"],
+                'total_edges': connected["total_edges"],
+                'filtered_nodes': connected["filtered_nodes"],
+                'filtered_edges': connected["filtered_edges"]
+            }
+        })
+    except Exception as e:
+        current_app.logger.error(f'获取节点连通图失败: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': True, 'message': '获取节点连通图失败', 'details': str(e)}), 500
 
 
 @api_bp.route('/graph/connected', methods=['GET'])

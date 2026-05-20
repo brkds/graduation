@@ -33,6 +33,20 @@ def debug_data():
 def test_fix():
     return send_file('test_fix.html')
 
+@app.route('/directory_children', methods=['GET'])
+def get_directory_children():
+    """代理：获取目录子节点"""
+    try:
+        params = dict(request.args)
+        response = requests.get(f"{BACKEND_URL}/directory_children", params=params)
+        if response.status_code == 200:
+            return jsonify(response.json())
+        else:
+            return jsonify([])
+    except requests.exceptions.RequestException as e:
+        print(f"连接后端API失败: {e}")
+        return jsonify([])
+
 @app.route('/func_tree', methods=['GET'])
 def get_func_tree():
     """从真实后端获取文件树数据"""
@@ -104,6 +118,23 @@ def get_func_tree():
                 ]
             }
         ])
+
+@app.route('/node_graph')
+def get_node_graph():
+    """代理：获取以节点为中心的连通关系图"""
+    try:
+        node_id = request.args.get("node_id", "")
+        max_depth = request.args.get("max_depth", "3")
+        response = requests.get(f"{BACKEND_URL}/node_graph", params={
+            "node_id": node_id, "max_depth": max_depth
+        })
+        if response.status_code == 200:
+            return jsonify(response.json())
+        else:
+            return jsonify({"nodes": [], "edges": []})
+    except requests.exceptions.RequestException as e:
+        print(f"连接后端API失败: {e}")
+        return jsonify({"nodes": [], "edges": []})
 
 @app.route('/graph')
 def get_graph():

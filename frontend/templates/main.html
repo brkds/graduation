@@ -68,7 +68,8 @@
 
     <!-- Tab 2: 关系图 -->
     <div v-show="activeTab === 'graph'" class="tab-panel">
-      <graph-panel 
+      <graph-panel
+        ref="graphPanelRef"
         :tree="tree"
         :loading="loading"
         @file-selected="handleFileSelected"
@@ -1021,6 +1022,29 @@ const TreeNode = defineComponent({
       }
     };
 
+    // 自动展开：当选中的文件路径变化时，如果是当前文件夹的后代，自动展开
+    watch(() => props.selectedFilePath, async (newPath) => {
+      if (newPath && props.node.type === 'folder' && !isOpen.value) {
+        const folderPath = props.node.full_path || props.node.name;
+        if (newPath.startsWith(folderPath + '/')) {
+          if (children.value.length === 0 && props.node.has_children) {
+            isLoading.value = true;
+            try {
+              const path = props.node.full_path || props.node.name;
+              const res = await fetch(`/directory_children?path=${encodeURIComponent(path)}`);
+              const data = await res.json();
+              children.value = data;
+            } catch (err) {
+              console.error('自动展开加载子目录失败:', err);
+            } finally {
+              isLoading.value = false;
+            }
+          }
+          isOpen.value = true;
+        }
+      }
+    }, { immediate: true });
+
     return { isOpen, isLoading, children, toggle, isSelected, showFileContent };
   },
   template:`
@@ -1298,6 +1322,78 @@ const GraphPanel = defineComponent({
           animation: { duration: 500, easingFunction: 'easeInOutQuad' },
           padding: 50
         });
+      }
+    };
+
+    // 加载以节点为中心的连通图（从搜索结果点击触发）
+    const loadNodeGraph = async (nodeId, nodeLabel, nodeType, filePath) => {
+      console.log('loadNodeGraph: 加载节点连通图', { nodeId, nodeLabel, nodeType, filePath });
+      try {
+        const response = await fetch(`/node_graph?node_id=${encodeURIComponent(nodeId)}&max_depth=3`);
+        const data = await response.json();
+        console.log('节点连通图数据:', { nodes: data.nodes?.length || 0, edges: data.edges?.length || 0 });
+
+        if (!data.nodes || !data.edges || (data.nodes.length === 0 && data.edges.length === 0)) {
+          console.warn('节点连通图数据为空');
+          return;
+        }
+
+        // 确保数据集和网络实例已初始化
+        if (!networkInstance.value) {
+          console.warn('网络实例未初始化，延迟重试');
+          setTimeout(() => loadNodeGraph(nodeId, nodeLabel, nodeType), 200);
+          return;
+        }
+
+        // 更新文件信息面板和文件树选中路径
+        currentFile.value = '';
+        // 去掉 linux-6.6/ 前缀以匹配文件树格式
+        selectedFilePath.value = (filePath || '').replace(/^linux-6\.6\//, '');
+        analysisdata.value = {
+          file_path: `节点连通图: ${nodeLabel} (${nodeType})`,
+          function_count: data.nodes.filter(n => n.type === 'function').length,
+          variable_count: data.nodes.filter(n => n.type === 'variable').length,
+          data_pointer_count: data.nodes.filter(n => n.type === 'data_pointer').length,
+          function_pointer_count: data.nodes.filter(n => n.type === 'function_pointer').length,
+          read_access_count: data.edges.filter(e => e.access_type === 'read').length,
+          write_access_count: data.edges.filter(e => e.access_type === 'write').length,
+          total_count: data.nodes.length
+        };
+
+        // 保存原始数据
+        originalNodes.value = data.nodes;
+        originalEdges.value = data.edges;
+
+        // 清除现有数据并加载新数据（nodes/edges 是 vis.DataSet，自动通知 network）
+        nodes.value.clear();
+        edges.value.clear();
+
+        // 处理边并加载
+        const processedEdges = processParallelEdges(data.edges);
+        nodes.value.add(data.nodes);
+        edges.value.add(processedEdges);
+
+        // 重置过滤状态
+        activeNodeId.value = null;
+        isFiltered.value = false;
+
+        // 强制可见并稳定布局
+        cal_finished.value = false;
+        showNetwork.value = true;
+        networkInstance.value.setOptions({ physics: { enabled: true } });
+        networkInstance.value.stabilize(300);
+
+        // 稳定后适配视图
+        setTimeout(() => {
+          if (networkInstance.value) {
+            networkInstance.value.fit({
+              animation: { duration: 800, easingFunction: 'easeInOutQuad' },
+              padding: 50
+            });
+          }
+        }, 600);
+      } catch (error) {
+        console.error('加载节点连通图失败:', error);
       }
     };
 
@@ -1915,6 +2011,7 @@ const GraphPanel = defineComponent({
       isTreeCollapsed,
       toggleTree,
       reloaddata,
+      loadNodeGraph,
       refreshLayout,
       cal_finished,
       showNetwork,
@@ -2167,6 +2264,16 @@ const SearchPanel = defineComponent({
       selectedResult.value = item;
       results.value = [];
       searchTerm.value = item.name;
+      // 直接根据搜索结果中的类型触发事件，跳转关系图
+      // 不依赖 search_detail API，避免404中断流程
+      if (item.type === 'function') {
+        emit('function-selected', { id: item.id, name: item.name, file_path: item.file_path });
+      } else if (item.type === 'variable') {
+        emit('variable-selected', { id: item.id, name: item.name, file_path: item.file_path });
+      } else if (item.type === 'data_pointer' || item.type === 'function_pointer') {
+        emit('pointer-selected', { id: item.id, name: item.name, type: item.type, file_path: item.file_path });
+      }
+      // 同时加载详细信息（用于搜索面板内展示，失败不影响关系图）
       loadDetailByIdOrName(item.id);
     };
 
@@ -5467,6 +5574,7 @@ createApp({
   setup() {
     const toastRef = ref(null);
     const aiAssistantRef = ref(null);
+    const graphPanelRef = ref(null);
     const activeTab = ref('overview');
     const tree = ref([]);
     const loading = ref(true);
@@ -5524,27 +5632,43 @@ createApp({
 
     const handleFunctionSelected = (funcData) => {
       console.log('Function selected:', funcData);
-      // 更新页面状态
       pageStates.value.search.selectedType = 'function';
       pageStates.value.search.selectedId = funcData.id;
       pageStates.value.search.selectedName = funcData.name;
+      // 切换到关系图tab并展示节点连通图
+      switchTab('graph');
+      nextTick(() => {
+        if (graphPanelRef.value && funcData.id) {
+          graphPanelRef.value.loadNodeGraph(funcData.id, funcData.name || funcData.id, 'function', funcData.file_path || '');
+        }
+      });
     };
-    
+
     const handleVariableSelected = (variableData) => {
       console.log('Variable selected:', variableData);
-      // 更新页面状态
       pageStates.value.search.selectedType = 'variable';
       pageStates.value.search.selectedId = variableData.id;
       pageStates.value.search.selectedName = variableData.name;
       pageStates.value.search.selectedFilePath = variableData.file_path || null;
+      switchTab('graph');
+      nextTick(() => {
+        if (graphPanelRef.value && variableData.id) {
+          graphPanelRef.value.loadNodeGraph(variableData.id, variableData.name || variableData.id, 'variable', variableData.file_path || '');
+        }
+      });
     };
-    
+
     const handlePointerSelected = (pointerData) => {
       console.log('Pointer selected:', pointerData);
-      // 更新页面状态
-      pageStates.value.search.selectedType = pointerData.type; // data_pointer 或 function_pointer
+      pageStates.value.search.selectedType = pointerData.type;
       pageStates.value.search.selectedId = pointerData.id;
       pageStates.value.search.selectedName = pointerData.name;
+      switchTab('graph');
+      nextTick(() => {
+        if (graphPanelRef.value && pointerData.id) {
+          graphPanelRef.value.loadNodeGraph(pointerData.id, pointerData.name || pointerData.id, pointerData.type, pointerData.file_path || '');
+        }
+      });
     };
     
     const handleCallGraphFunctionSelected = (functionData) => {
@@ -5639,6 +5763,7 @@ createApp({
       source_code,
       toastRef,
       aiAssistantRef,
+      graphPanelRef,
       pageStates,
       getCurrentPageState,
       handleFileSelected,
